@@ -1,0 +1,10 @@
+<RCC>
+    <qresource prefix="/">
+        <file>cuaso.qml</file>
+        <file>../language_icon_button.png</file>
+        <file>../language_background.jpg</file>
+        <file>compare.png</file>
+        <file>export.png</file>
+        <file>icons8-upload-file-48.png</file>
+    </qresource>
+</RCC>

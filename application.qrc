@@ -6,5 +6,7 @@
         <file>compare.png</file>
         <file>export.png</file>
         <file>icons8-upload-file-48.png</file>
+        <file>background.png</file>
+        <file>../video.mp4</file>
     </qresource>
 </RCC>

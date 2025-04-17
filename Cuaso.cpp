@@ -14,8 +14,10 @@
 #include <QWindow>
 #include <QPushButton>
 #include "xlsxdocument.h"
+#include "xlsxformat.h"
 #include <QProcess>
 #include <QSettings>
+#include <QtConcurrent>
 Cuaso::Cuaso(QObject *parent)
     : QObject(parent), m_exportStatus(""),
     m_file1Model(new QStandardItemModel(this)),
@@ -60,7 +62,12 @@ void Cuaso::setExportStatus(const QString &exportStatus) {
         emit exportStatusChanged();
     }
 }
-
+void Cuaso::resetWindow(){
+    m_filepath1.clear();
+    m_filepath2.clear();
+    emit filepath1Changed();
+    emit filepath2Changed();
+}
 
 void Cuaso::loadFile1() {
     QString file = QFileDialog::getOpenFileName(nullptr, "Select Excel File 1", "", "Excel Files (*.xlsx )");
@@ -120,6 +127,7 @@ void Cuaso::compareSheets() {
     m_file1Model->setItem(0, 0, new QStandardItem(""));
     m_file2Model->setItem(0, 0, new QStandardItem(""));
     m_compareModel->setItem(0,0,new QStandardItem(""));
+
     for (int i = 0; i <= maxRow; i++) {
         for (int j = 0; j <= maxCol; j++) {
             if (j == 0 && i > 0) {
@@ -155,7 +163,7 @@ void Cuaso::compareSheets() {
             if (j == 0 && i > 0) {
                 QString rowMark = QString::number(i);
                 QStandardItem *itemRow1 = new QStandardItem(rowMark);
-                itemRow1->setBackground(QBrush(Qt::gray));
+                itemRow1->setBackground(QBrush(Qt::darkYellow));
                 m_compareModel->setItem(i, 0, itemRow1);
 
             }
@@ -217,34 +225,45 @@ void Cuaso::compareSheets() {
 }
 
 void Cuaso::exportDifferences() {
-    QString dir = QFileDialog::getExistingDirectory(nullptr, tr("Select Export Directory"));
-    if (dir.isEmpty())
+    QString filePath = QFileDialog::getSaveFileName(nullptr,
+                                                    tr("Save File As"),
+                                                    QDir::homePath() + "/Different_file.xlsx",
+                                                    tr("Excel Files (*.xlsx)"));
+    if (filePath.isEmpty())
         return;
 
+    QXlsx::Format format_string;
+    format_string.setFontBold(true);
+    format_string.setFontColor(QColor(Qt::gray));
+    format_string.setPatternBackgroundColor(QColor(Qt::green));
     QXlsx::Document exportDoc;
+
     int rowCount = m_diffModel->rowCount();
     int colCount = m_diffModel->columnCount();
-    QVector<int> maxWidths(colCount, 0);
+
     for (int r = 0; r < rowCount; ++r) {
         for (int c = 0; c < colCount; ++c) {
             QStandardItem *item = m_diffModel->item(r, c);
             if (item) {
                 QString text = item->text();
-                exportDoc.write(r + 1, c + 1, text);
-                maxWidths[c] = qMax(maxWidths[c], text.length());
+                if (text.contains("File_old")) {
+                    exportDoc.write(r + 1, c + 1, text, format_string);
+                } else {
+                    exportDoc.write(r + 1, c + 1, text);
+                }
             }
         }
     }
-    for (int c = 0; c < colCount; ++c) {
-        exportDoc.setColumnWidth(c + 1, maxWidths[c] + 1);
-    }
-    exportDoc.saveAs(dir + "/Different_file.xlsx");
+    exportDoc.autosizeColumnWidth(1, colCount);
+    if (!filePath.endsWith(".xlsx"))
+        filePath += ".xlsx";
+    exportDoc.saveAs(filePath);
 }
 
 
 void Cuaso::exportQm(const QString &directory) {
     if (m_filepath2.isEmpty()) {
-        m_exportStatus = "Please check file Excel 2";
+        m_exportStatus = "Please check file Excel new";
         emit exportStatusChanged();
         return;
     }

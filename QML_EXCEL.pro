@@ -1,4 +1,4 @@
-QT       += core gui widgets charts quick qml quickcontrols2
+QT       += core gui widgets charts quick qml quickcontrols2 concurrent
 
 CONFIG += c++17 cmdline
 
@@ -14,11 +14,11 @@ win32 {
     QXLSX_PARENTPATH = D:/Code_Qt/QXlsx/QXlsx
 }
 android {
-    # Đối với Android, bạn có thể cần đặt lại đường dẫn thư viện nếu có
+
     QXLSX_PARENTPATH = $$PWD/../QXlsx/QXlsx
 }
 ios {
-    # Tương tự, cấu hình đường dẫn cho iOS
+
     QXLSX_PARENTPATH = $$PWD/../QXlsx/QXlsx
 }
 
@@ -38,4 +38,5 @@ HEADERS += \
     Cuaso.h
 
 DISTFILES += \
-    dummy.qml
+    dummy.qml \
+    translations_Vietnamese.qm

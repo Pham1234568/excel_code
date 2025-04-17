@@ -43,6 +43,8 @@ public:
     double diffCount() const { return m_diffCount; }
     void saveLastSession();
     void loadLastSession();
+    Q_INVOKABLE void resetWindow();
+
 
 signals:
     void filepath1Changed();

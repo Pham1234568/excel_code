@@ -1,17 +1,17 @@
 #include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
-#include "Cuaso.h"
+#include "Window.h"
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
     QQmlApplicationEngine engine;
-    Cuaso cuaso;
-    engine.rootContext()->setContextProperty("cuaso", &cuaso);
+    Window window;
+    engine.rootContext()->setContextProperty("window", &window);
 
-    engine.load(QUrl(QStringLiteral("qrc:/cuaso.qml")));
+    engine.load(QUrl(QStringLiteral("qrc:/window.qml")));
     if(engine.rootObjects().isEmpty())
         return -1;
 

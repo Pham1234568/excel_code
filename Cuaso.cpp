@@ -1,4 +1,4 @@
-#include "Cuaso.h"
+#include "Window.h"
 #include <QDebug>
 #include <QFileDialog>
 #include <QApplication>
@@ -17,8 +17,8 @@
 #include "xlsxformat.h"
 #include <QProcess>
 #include <QSettings>
-#include <QtConcurrent>
-Cuaso::Cuaso(QObject *parent)
+
+Window::Window(QObject *parent)
     : QObject(parent), m_exportStatus(""),
     m_file1Model(new QStandardItemModel(this)),
     m_file2Model(new QStandardItemModel(this)),
@@ -29,50 +29,74 @@ Cuaso::Cuaso(QObject *parent)
 {
     loadLastSession();
 }
-
-QString Cuaso::filepath1() const {
-    return m_filepath1;
+void Window::openWeb(){
+    QUrl url("https://huggingface.co/spaces/Naruto123321/languages");
+    QDesktopServices::openUrl(url);
 }
-
-void Cuaso::setFilepath1(const QString &filepath1) {
-    if (m_filepath1 != filepath1) {
-        m_filepath1 = filepath1;
-        emit filepath1Changed();
+QString Window::filepath_old() const {
+    return m_filepath_old;
+}
+void Window::setfilepath_old(const QString &filepath_old) {
+    if (m_filepath_old != filepath_old) {
+        m_filepath_old = filepath_old;
+        emit filepath_oldChanged();
     }
 }
 
-QString Cuaso::filepath2() const {
-    return m_filepath2;
+QString Window::filepath_new() const {
+    return m_filepath_new;
 }
 
-void Cuaso::setFilepath2(const QString &filepath2) {
-    if (m_filepath2 != filepath2) {
-        m_filepath2 = filepath2;
-        emit filepath2Changed();
+void Window::setfilepath_new(const QString &filepath_new) {
+    if (m_filepath_new != filepath_new) {
+        m_filepath_new = filepath_new;
+        emit filepath_newChanged();
     }
 }
 
-QString Cuaso::exportStatus() const {
+QString Window::exportStatus() const {
     return m_exportStatus;
 }
 
-void Cuaso::setExportStatus(const QString &exportStatus) {
+void Window::setExportStatus(const QString &exportStatus) {
     if (m_exportStatus != exportStatus) {
         m_exportStatus = exportStatus;
         emit exportStatusChanged();
     }
 }
-void Cuaso::resetWindow(){
-    m_filepath1.clear();
-    m_filepath2.clear();
-    emit filepath1Changed();
-    emit filepath2Changed();
+void Window::resetWindow(){
+    m_filepath_old.clear();
+    m_filepath_new.clear();
+
+    if (m_file1Model) {
+        m_file1Model->clear();
+        emit file1ModelChanged();
+    }
+    if (m_file2Model) {
+        m_file2Model->clear();
+        emit file2ModelChanged();
+    }
+    if (m_compareModel) {
+        m_compareModel->clear();
+        emit compareModelChanged();
+    }
+    if (m_diffModel) {
+        m_diffModel->clear();
+        emit diffModelChanged();
+    }
+
+    m_totalCells = 0;
+    m_diffCount = 0;
+    emit filepath_oldChanged();
+    emit filepath_newChanged();
+    emit totalCellsChanged();
+    emit diffCountChanged();
 }
 
-void Cuaso::loadFile1() {
+void Window::loadFile1() {
     QString file = QFileDialog::getOpenFileName(nullptr, "Select Excel File 1", "", "Excel Files (*.xlsx )");
     if (!file.isEmpty()) {
-        setFilepath1(file);
+        setfilepath_old(file);
         qDebug() << "Loaded File1:" << file;
     }
 }
@@ -86,21 +110,73 @@ QString columnNumberToLetter(int columnNumber) {
     return columnName;
 }
 
-void Cuaso::loadFile2() {
+void Window::loadFile2() {
     QString file = QFileDialog::getOpenFileName(nullptr, "Select Excel File 2", "", "Excel Files (*.xlsx )");
     if (!file.isEmpty()) {
-        setFilepath2(file);
+        setfilepath_new(file);
         qDebug() << "Loaded File2:" << file;
     }
 }
-void Cuaso::compareSheets() {
-    if(m_filepath1.isEmpty() || m_filepath2.isEmpty()){
+QVector<QVector<QVariant>> cacheSheet(QXlsx::Document& doc, int maxRow, int maxCol) {
+    QVector<QVector<QVariant>> data(maxRow, QVector<QVariant>(maxCol));
+    for (int i = 0; i < maxRow; ++i)
+        for (int j = 0; j < maxCol; ++j)
+            data[i][j] = doc.read(i + 1, j + 1);
+    return data;
+}
+QVector<QVector<QVariant>> compare(QVector<QVector<QVariant>>m_1,QVector<QVector<QVariant>> m_2,int maxRow, int maxCol) {
+    QVector<QVector<QVariant>> data(maxRow, QVector<QVariant>(maxCol));
+    for (int i=0;i<maxRow;i++){
+        for(int j=0;j<maxCol;j++){
+            if (m_1[i][j]!=m_2[i][j]){
+                data[i][j]="x Diffetent";
+            }
+            else{
+                data[i][j]=m_1[i][j].toString();
+            }
+        }
+    }
+    return data;
+}
+QVector<QVector<QVariant>> Window::diff_model(const QVector<QVector<QVariant>>& m_1,
+                                      const QVector<QVector<QVariant>>& m_2,
+                                      int maxRow, int maxCol) {
+    QVector<QVector<QVariant>> result(maxRow, QVector<QVariant>(maxCol + 1)); // +1 để thêm cột "Difference"
+    for (int i = 0; i < maxRow; ++i) {
+        bool rowHasDiff = false;
+        for (int j = 0; j < maxCol; ++j) {
+            if (m_1[i][j] != m_2[i][j]) {
+                rowHasDiff = true;
+                if (m_1[i][j].isNull() && !m_2[i][j].isNull()) {
+                    result[i][j] = QString("File_old:{EMPTY} | File_new:{%1}").arg(m_2[i][j].toString());
+                } else if (!m_1[i][j].isNull() && m_2[i][j].isNull()) {
+                    result[i][j] = QString("File_old:{%1} | File_new:{EMPTY}").arg(m_1[i][j].toString());
+                } else {
+                    result[i][j] = QString("File_old:{%1} | File_new:{%2}")
+                    .arg(m_1[i][j].toString())
+                        .arg(m_2[i][j].toString());
+                }
+            } else {
+                result[i][j] = m_1[i][j].toString();
+            }
+        }
+        result[i][maxCol] = rowHasDiff ? "Yes" : "No";
+    }
+    return result;
+}
+
+void Window::compareSheets() {
+    qDebug() << "Compare called";
+    QElapsedTimer timer;
+    timer.start();
+
+    if (m_filepath_old.isEmpty() || m_filepath_new.isEmpty()) {
         qDebug() << "Chưa chọn đủ file!";
         return;
     }
 
-    QXlsx::Document doc1(m_filepath1), doc2(m_filepath2);
-    if(!doc1.load() || !doc2.load()){
+    QXlsx::Document doc1(m_filepath_old), doc2(m_filepath_new);
+    if (!doc1.load() || !doc2.load()) {
         qDebug() << "Lỗi mở file Excel!";
         return;
     }
@@ -109,109 +185,90 @@ void Cuaso::compareSheets() {
     QXlsx::CellRange range2 = doc2.dimension();
     int maxRow = std::max(range1.lastRow(), range2.lastRow());
     int maxCol = std::max(range1.lastColumn(), range2.lastColumn());
+
     m_totalCells = maxRow * maxCol;
     m_diffCount = 0;
 
-    delete m_file1Model;
-    m_file1Model = new QStandardItemModel(maxRow + 1, maxCol + 1, this);
-    delete m_file2Model;
-    m_file2Model = new QStandardItemModel(maxRow + 1, maxCol + 1, this);
-    delete m_compareModel;
-    m_compareModel = new QStandardItemModel(maxRow +1, maxCol +1, this);
-    delete m_diffModel;
-    m_diffModel = new QStandardItemModel(maxRow, maxCol + 1, this);
+    QFuture<QVector<QVector<QVariant>>> futureData1 = QtConcurrent::run(cacheSheet, std::ref(doc1), maxRow, maxCol);
+    QFuture<QVector<QVector<QVariant>>> futureData2 = QtConcurrent::run(cacheSheet, std::ref(doc2), maxRow, maxCol);
+    futureData1.waitForFinished();
+    futureData2.waitForFinished();
 
-    QVector<QVector<QVariant>> data1(maxRow , QVector<QVariant>(maxCol));
-    QVector<QVector<QVariant>> data2(maxRow , QVector<QVariant>(maxCol));
+    QVector<QVector<QVariant>> data1 = futureData1.result();
+    QVector<QVector<QVariant>> data2 = futureData2.result();
 
-    m_file1Model->setItem(0, 0, new QStandardItem(""));
-    m_file2Model->setItem(0, 0, new QStandardItem(""));
-    m_compareModel->setItem(0,0,new QStandardItem(""));
+    QFuture<QVector<QVector<QVariant>>> futureCompare = QtConcurrent::run(compare, data1, data2, maxRow, maxCol);
+    auto futureDiff = QtConcurrent::run([=]() {
+        return this->diff_model(data1, data2, maxRow, maxCol);
+    });
 
-    for (int i = 0; i <= maxRow; i++) {
-        for (int j = 0; j <= maxCol; j++) {
-            if (j == 0 && i > 0) {
-                QString rowMark = QString::number(i);
-                QStandardItem *itemRow1 = new QStandardItem(rowMark);
-                QStandardItem *itemRow2 = new QStandardItem(rowMark);
-                itemRow1->setBackground(QBrush(Qt::gray));
-                itemRow2->setBackground(QBrush(Qt::gray));
-                m_file1Model->setItem(i, 0, itemRow1);
-                m_file2Model->setItem(i, 0, itemRow2);
-            }
-            if (i == 0 && j > 0) {
-                QString colMark = columnNumberToLetter(j);
-                QStandardItem *itemCol1 = new QStandardItem(colMark);
-                QStandardItem *itemCol2 = new QStandardItem(colMark);
-                itemCol1->setBackground(QBrush(Qt::gray));
-                itemCol2->setBackground(QBrush(Qt::gray));
-                m_file1Model->setItem(0, j, itemCol1);
-                m_file2Model->setItem(0, j, itemCol2);
-            }
-            if (i > 0 && j > 0) {
-                data1[i-1][j-1] = doc1.read(i, j);
-                data2[i-1][j-1] = doc2.read(i, j);
-                m_file1Model->setItem(i, j, new QStandardItem(data1[i-1][j-1].toString()));
-                m_file2Model->setItem(i, j, new QStandardItem(data2[i-1][j-1].toString()));
-            }
-        }
+    futureCompare.waitForFinished();
+    futureDiff.waitForFinished();
+
+    QVector<QVector<QVariant>> compareData = futureCompare.result();
+    QVector<QVector<QVariant>> diffData = futureDiff.result();
+
+    m_file1Model->clear();
+    m_file2Model->clear();
+    m_compareModel->clear();
+    m_diffModel->clear();
+
+    for (int j = 0; j <= maxCol; ++j) {
+        QString colMark = (j == 0) ? "" : columnNumberToLetter(j);
+        QStandardItem *header1 = new QStandardItem(colMark);
+        QStandardItem *header2 = new QStandardItem(colMark);
+        QStandardItem *headerCompare = new QStandardItem(colMark);
+        QStandardItem *headerDiff = new QStandardItem(colMark);
+
+        header1->setBackground(Qt::gray);
+        header2->setBackground(Qt::gray);
+        headerCompare->setBackground(Qt::gray);
+        headerDiff->setBackground(Qt::gray);
+
+        m_file1Model->setItem(0, j, header1);
+        m_file2Model->setItem(0, j, header2);
+        m_compareModel->setItem(0, j, headerCompare);
+        m_diffModel->setItem(0, j, headerDiff);
     }
-//SET COMPARE MODEL
-    for (int i = 0; i <= maxRow; i++) {
-        for (int j = 0; j <= maxCol; j++){
-            QStandardItem *itemCompare = new QStandardItem();
-            if (j == 0 && i > 0) {
-                QString rowMark = QString::number(i);
-                QStandardItem *itemRow1 = new QStandardItem(rowMark);
-                itemRow1->setBackground(QBrush(Qt::darkYellow));
-                m_compareModel->setItem(i, 0, itemRow1);
+    m_diffModel->setItem(0, maxCol, new QStandardItem("Difference"));
 
-            }
-            if (i == 0 && j > 0) {
-                QString colMark = columnNumberToLetter(j);
-                QStandardItem *itemCol1 = new QStandardItem(colMark);
-                itemCol1->setBackground(QBrush(Qt::gray));
-                m_compareModel->setItem(0, j, itemCol1);
+    for (int i = 0; i < maxRow; ++i) {
+        QStandardItem *rowHeader1 = new QStandardItem(QString::number(i + 1));
+        QStandardItem *rowHeader2 = new QStandardItem(QString::number(i + 1));
+        QStandardItem *rowHeaderCompare = new QStandardItem(QString::number(i + 1));
+        QStandardItem *rowHeaderDiff = new QStandardItem(QString::number(i + 1));
 
+        rowHeader1->setBackground(Qt::gray);
+        rowHeader2->setBackground(Qt::gray);
+        rowHeaderCompare->setBackground(Qt::darkYellow);
+        rowHeaderDiff->setBackground(Qt::gray);
+
+        m_file1Model->setItem(i + 1, 0, rowHeader1);
+        m_file2Model->setItem(i + 1, 0, rowHeader2);
+        m_compareModel->setItem(i + 1, 0, rowHeaderCompare);
+        m_diffModel->setItem(i + 1, 0, rowHeaderDiff);
+
+        for (int j = 0; j < maxCol; ++j) {
+            m_file1Model->setItem(i + 1, j + 1, new QStandardItem(data1[i][j].toString()));
+            m_file2Model->setItem(i + 1, j + 1, new QStandardItem(data2[i][j].toString()));
+
+            QStandardItem *compareItem = new QStandardItem(compareData[i][j].toString());
+            if (compareData[i][j].toString().contains("Diffetent", Qt::CaseInsensitive)) {
+                compareItem->setBackground(QColor("#FFC7CE"));
             }
-            if (i > 0 && j > 0) {
-                if (data1[i-1][j-1] != data2[i-1][j-1]){
-                    itemCompare->setText(QStringLiteral("❌ Different"));
-                    m_compareModel->setItem(i, j, itemCompare);
-                }
-                else{
-                    m_compareModel->setItem(i, j, new QStandardItem(data1[i-1][j-1].toString()));
-                }
-            }
-        }
-    }
- //SET DIFF MODEL
-    for (int i = 0; i < maxRow; i++) {
-        bool rowHasDiff = false;
-        for (int j = 0; j < maxCol; j++) {
-            QStandardItem *itemDiff    = new QStandardItem();
+            m_compareModel->setItem(i + 1, j + 1, compareItem);
+
+            QStandardItem *diffItem = new QStandardItem(diffData[i][j].toString());
             if (data1[i][j] != data2[i][j]) {
-                m_diffCount++;
-                QString diffText;
-                if (data1[i][j].isNull() && !data2[i][j].isNull())
-                    diffText = QString("File_old:{EMPTY} | File_new:{%1}").arg(data2[i][j].toString());
-                else if (!data1[i][j].isNull() && data2[i][j].isNull())
-                    diffText = QString("File_old:{%1} | File_new:{EMPTY}").arg(data1[i][j].toString());
-                else
-                    diffText = QString("File_old:{%1} | File_new:{%2}")
-                                   .arg(data1[i][j].toString())
-                                   .arg(data2[i][j].toString());
-                itemDiff->setText(diffText);
-                itemDiff->setBackground(QBrush(QColor("#D9E1F2")));
-                rowHasDiff = true;
-            } else {
-                itemDiff->setText(data1[i][j].toString());
+                ++m_diffCount;
+                diffItem->setBackground(QBrush(QColor("#D9E1F2")));
             }
-            m_diffModel->setItem(i, j, itemDiff);
+            m_diffModel->setItem(i + 1, j + 1, diffItem);
         }
-        QStandardItem *indicator = new QStandardItem(i == 0 ? "Difference" : (rowHasDiff ? "Yes" : "No"));
-        m_diffModel->setItem(i, maxCol, indicator);
+        m_diffModel->setItem(i + 1, maxCol, new QStandardItem(diffData[i][maxCol].toString()));
     }
+
+    m_elapsedTime = timer.elapsed();
 
     emit file1ModelChanged();
     emit file2ModelChanged();
@@ -219,12 +276,13 @@ void Cuaso::compareSheets() {
     emit diffModelChanged();
     emit totalCellsChanged();
     emit diffCountChanged();
+    emit elapsedTimeChanged();
 
     double similarityPercent = 100.0 * (m_totalCells - m_diffCount) / m_totalCells;
     qDebug() << "Total cells:" << m_totalCells << "Different:" << m_diffCount << "Similarity:" << similarityPercent;
 }
 
-void Cuaso::exportDifferences() {
+void Window::exportDifferences() {
     QString filePath = QFileDialog::getSaveFileName(nullptr,
                                                     tr("Save File As"),
                                                     QDir::homePath() + "/Different_file.xlsx",
@@ -241,8 +299,8 @@ void Cuaso::exportDifferences() {
     int rowCount = m_diffModel->rowCount();
     int colCount = m_diffModel->columnCount();
 
-    for (int r = 0; r < rowCount; ++r) {
-        for (int c = 0; c < colCount; ++c) {
+    for (int r = 1; r < rowCount; ++r) {
+        for (int c = 1; c < colCount; ++c) {
             QStandardItem *item = m_diffModel->item(r, c);
             if (item) {
                 QString text = item->text();
@@ -261,14 +319,15 @@ void Cuaso::exportDifferences() {
 }
 
 
-void Cuaso::exportQm(const QString &directory) {
-    if (m_filepath2.isEmpty()) {
+void Window::exportQm(const QString &directory) {
+    qDebug()<<"Qm called";
+    if (m_filepath_new.isEmpty()) {
         m_exportStatus = "Please check file Excel new";
         emit exportStatusChanged();
         return;
     }
 
-    QXlsx::Document xlsx(m_filepath2);
+    QXlsx::Document xlsx(m_filepath_new);
     int colCount = xlsx.dimension().columnCount();
     int rowCount = xlsx.dimension().rowCount();
     QDir dir(directory);
@@ -285,7 +344,7 @@ void Cuaso::exportQm(const QString &directory) {
         return;
     }
 
-    QString contextName = "Default";
+    QString contextName = "main";
     for (int col = 2; col <= colCount; ++col) {
         QString language = xlsx.read(1, col).toString();
         if (language.isEmpty()) continue;
@@ -330,20 +389,20 @@ void Cuaso::exportQm(const QString &directory) {
             return;
         }
     }
-    qDebug() << "Export QM vào thư mục:" << directory;
-    setExportStatus("Export thành công!");
+    qDebug() << "Export QM into:" << directory;
+    setExportStatus("Export successfully");
 }
-void Cuaso::loadLastSession() {
+void Window::loadLastSession() {
     QSettings settings("MyCompany", "MyApp");
-    m_filepath1 = settings.value("filepath1").toString();
-    m_filepath2 = settings.value("filepath2").toString();
+    m_filepath_old = settings.value("filepath_old").toString();
+    m_filepath_new = settings.value("filepath_new").toString();
 }
-void Cuaso::saveLastSession() {
+void Window::saveLastSession() {
     QSettings settings("MyCompany", "MyApp");
-    settings.setValue("filepath1", m_filepath1);
-    settings.setValue("filepath2", m_filepath2);
+    settings.setValue("filepath_old", m_filepath_old);
+    settings.setValue("filepath_new", m_filepath_new);
 
 }
-Cuaso::~Cuaso() {
+Window::~Window() {
     saveLastSession();
 }

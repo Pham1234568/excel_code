@@ -1,5 +1,5 @@
-#ifndef CUASO_H
-#define CUASO_H
+#ifndef WINDOW_H
+#define WINDOW_H
 
 #include <QObject>
 #include <QString>
@@ -7,11 +7,15 @@
 #include <QTableWidget>
 #include "xlsxdocument.h"
 #include <QStandardItemModel>
-class Cuaso : public QObject
+#include <QElapsedTimer>
+#include <QDesktopServices>
+#include <QFutureWatcher>
+#include <QtConcurrent>
+class Window : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(QString filepath1 READ filepath1 WRITE setFilepath1 NOTIFY filepath1Changed)
-    Q_PROPERTY(QString filepath2 READ filepath2 WRITE setFilepath2 NOTIFY filepath2Changed)
+    Q_PROPERTY(QString filepath_old READ filepath_old WRITE setfilepath_old NOTIFY filepath_oldChanged)
+    Q_PROPERTY(QString filepath_new READ filepath_new WRITE setfilepath_new NOTIFY filepath_newChanged)
     Q_PROPERTY(QString exportStatus READ exportStatus WRITE setExportStatus NOTIFY exportStatusChanged)
     Q_PROPERTY(QAbstractItemModel* file1Model READ file1Model NOTIFY file1ModelChanged)
     Q_PROPERTY(QAbstractItemModel* file2Model READ file2Model NOTIFY file2ModelChanged)
@@ -19,14 +23,16 @@ class Cuaso : public QObject
     Q_PROPERTY(QAbstractItemModel* diffModel READ diffModel NOTIFY diffModelChanged)
     Q_PROPERTY(double totalCells READ totalCells NOTIFY totalCellsChanged)
     Q_PROPERTY(double diffCount READ diffCount NOTIFY diffCountChanged)
-public:
-    explicit Cuaso(QObject *parent = nullptr);
-    ~Cuaso();
-    QString filepath1() const;
-    void setFilepath1(const QString &filepath1);
+    Q_PROPERTY(qint64 elapsedTime READ elapsedTime NOTIFY elapsedTimeChanged)
 
-    QString filepath2() const;
-    void setFilepath2(const QString &filepath2);
+public:
+    explicit Window(QObject *parent = nullptr);
+    ~Window();
+    QString filepath_old() const;
+    void setfilepath_old(const QString &filepath_old);
+    Q_INVOKABLE void openWeb();
+    QString filepath_new() const;
+    void setfilepath_new(const QString &filepath_new);
 
     QString exportStatus() const;
     void setExportStatus(const QString &exportStatus);
@@ -38,6 +44,10 @@ public:
     QAbstractItemModel* file1Model() const { return m_file1Model; }
     QAbstractItemModel* file2Model() const { return m_file2Model; }
     QAbstractItemModel* compareModel() const { return m_compareModel; }
+    qint64 elapsedTime() const{
+        return m_elapsedTime;
+    }
+    QFutureWatcher<void> *m_compareWatcher = nullptr;
     QAbstractItemModel* diffModel() const { return m_diffModel; }
     double totalCells() const { return m_totalCells; }
     double diffCount() const { return m_diffCount; }
@@ -45,10 +55,10 @@ public:
     void loadLastSession();
     Q_INVOKABLE void resetWindow();
 
-
+    QVector<QVector<QVariant> > diff_model(const QVector<QVector<QVariant> > &m_1, const QVector<QVector<QVariant> > &m_2, int maxRow, int maxCol);
 signals:
-    void filepath1Changed();
-    void filepath2Changed();
+    void filepath_oldChanged();
+    void filepath_newChanged();
     void exportStatusChanged();
     void compareModelChanged();
     void diffModelChanged();
@@ -56,10 +66,11 @@ signals:
     void diffCountChanged();
     void file1ModelChanged();
     void file2ModelChanged();
+    void elapsedTimeChanged();
 
 private:
-    QString m_filepath1;
-    QString m_filepath2;
+    QString m_filepath_old;
+    QString m_filepath_new;
     QString m_exportStatus;
     QWidget* m_compareContainer;
     QTableWidget *mc_tableWidget;
@@ -69,6 +80,7 @@ private:
     QStandardItemModel *m_diffModel;
     double m_totalCells;
     double m_diffCount;
+    qint64 m_elapsedTime;
 };
 
-#endif // CUASO_H
+#endif // WINDOW_H
